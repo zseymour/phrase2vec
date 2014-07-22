@@ -38,7 +38,7 @@ struct vocab_word {
 
 struct paragraph {
   long long word_count;
-  int *point;
+  real *vector;
   char *label;
   struct vocab_word *words;
 };
@@ -47,7 +47,7 @@ char train_file[MAX_STRING], output_file[MAX_STRING];
 char save_vocab_file[MAX_STRING], read_vocab_file[MAX_STRING];
 struct vocab_word *vocab;
 struct paragraph *phrases;
-int binary = 0, cbow = 0, debug_mode = 2, window = 5, min_count = 5, num_threads = 1, min_reduce = 1;
+int binary = 0, dbow = 0, debug_mode = 2, window = 5, min_count = 5, num_threads = 1, min_reduce = 1;
 int *vocab_hash;
 long long vocab_max_size = 10000, vocab_size = 0, phrase_max_size = 100000, phrase_size = 0, layer1_size = 100;
 long long train_words = 0, word_count_actual = 0, file_size = 0, classes = 0;
@@ -416,7 +416,7 @@ void ReadVocab() {
 }
 
 void InitNet() {
-  long long a, b;
+  long long a, b, c;
   a = posix_memalign((void **)&syn0, 128, (long long)vocab_size * layer1_size * sizeof(real));
   if (syn0 == NULL) {printf("Memory allocation failed\n"); exit(1);}
   if (hs) {
@@ -433,11 +433,18 @@ void InitNet() {
   }
   for (b = 0; b < layer1_size; b++) for (a = 0; a < vocab_size; a++)
    syn0[a * layer1_size + b] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
+  for (b = 0; b < phrase_size; b++) {
+    a = posix_memalign((void **)&phrases[b].vector, 128, (long long)layer1_size * sizeof(real));
+    if(phrases[b].vector == NULL) {printf("Memory allocation failed\n"); exit(1);}
+    for(c = 0; c < layer1_size; c++) {
+      phrases[b].vector[c] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
+    }
+  }
   CreateBinaryTree();
 }
 
 void *TrainModelThread(void *id) {
-  long long a, b, d, word, last_word, sentence_length = 0, sentence_position = 0;
+  long long i,j, a, b, d, word, last_word, sentence_length = 0, sentence_position = 0;
   long long word_count = 0, last_word_count = 0, sen[MAX_SENTENCE_LENGTH + 1];
   long long l1, l2, c, target, label;
   unsigned long long next_random = (long long)id;
@@ -447,7 +454,10 @@ void *TrainModelThread(void *id) {
   real *neu1e = (real *)calloc(layer1_size, sizeof(real));
   //FILE *fi = fopen(train_file, "rb");
   //fseek(fi, file_size / (long long)num_threads * (long long)id, SEEK_SET);
-  while (1) {
+  long long first_phrase;
+  first_phrase = phrase_size / (long long) num_threads * (long long)(id);
+  long long last_phrase = phrase_size / (long long) num_threads * (long long)(id+1);
+  for(i = first_phrase; i < last_phrase; i++) {
     if (word_count - last_word_count > 10000) {
       word_count_actual += word_count - last_word_count;
       last_word_count = word_count;
@@ -462,8 +472,8 @@ void *TrainModelThread(void *id) {
       if (alpha < starting_alpha * 0.0001) alpha = starting_alpha * 0.0001;
     }
     if (sentence_length == 0) {
-      while (1) {
-        //word = ReadWordIndex(fi);
+      for(j = 0; j < phrases[i].word_count; j++) {
+        word = SearchVocab(phrases[i].words[j].word);
         //if (feof(fi)) break;
         if (word == -1) continue;
         word_count++;
@@ -488,7 +498,7 @@ void *TrainModelThread(void *id) {
     for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
     next_random = next_random * (unsigned long long)25214903917 + 11;
     b = next_random % window;
-    if (cbow) {  //train the cbow architecture
+    if (dbow) {  //train the dbow architecture
       // in -> hidden
       for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
         c = sentence_position - window + a;
@@ -543,7 +553,7 @@ void *TrainModelThread(void *id) {
         if (last_word == -1) continue;
         for (c = 0; c < layer1_size; c++) syn0[c + last_word * layer1_size] += neu1e[c];
       }
-    } else {  //train skip-gram
+    } else {  //train pv-dm
       for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
         c = sentence_position - window + a;
         if (c < 0) continue;
@@ -551,13 +561,16 @@ void *TrainModelThread(void *id) {
         last_word = sen[c];
         if (last_word == -1) continue;
         l1 = last_word * layer1_size;
+	for (c = 0; c < layer1_size; c++) neu1[c] = 0;
         for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
+	for (c = 0; c < layer1_size; c++) neu1[c] += syn0[c + l1];
+	for (c = 0; c < layer1_size; c++) neu1[c] += phrases[i].vector[c];
         // HIERARCHICAL SOFTMAX
         if (hs) for (d = 0; d < vocab[word].codelen; d++) {
           f = 0;
           l2 = vocab[word].point[d] * layer1_size;
           // Propagate hidden -> output
-          for (c = 0; c < layer1_size; c++) f += syn0[c + l1] * syn1[c + l2];
+          for (c = 0; c < layer1_size; c++) f += neu1[c] * syn1[c + l2];
           if (f <= -MAX_EXP) continue;
           else if (f >= MAX_EXP) continue;
           else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
@@ -622,11 +635,21 @@ void TrainModel() {
   fo = fopen(output_file, "wb");
   if (classes == 0) {
     // Save the word vectors
-    fprintf(fo, "%lld %lld\n", vocab_size, layer1_size);
+    fprintf(fo, "%lld %lld %lld\n", vocab_size, phrase_size, layer1_size);
     for (a = 0; a < vocab_size; a++) {
       fprintf(fo, "%s ", vocab[a].word);
       if (binary) for (b = 0; b < layer1_size; b++) fwrite(&syn0[a * layer1_size + b], sizeof(real), 1, fo);
       else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", syn0[a * layer1_size + b]);
+      fprintf(fo, "\n");
+    }
+    for (a = 0; a < phrase_size; a++) {
+      long count = phrases[a].word_count;
+      
+      for (b = 0; b < count; b++) {
+	fprintf(fo, "%s ", phrases[a].words[b].word);
+      }
+      if (binary) for (b = 0; b < layer1_size; b++) fwrite(&phrases[a].vector[b], sizeof(real), 1, fo);
+      else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].vector[b]);
       fprintf(fo, "\n");
     }
   } else {
@@ -740,7 +763,7 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-read-vocab", argc, argv)) > 0) strcpy(read_vocab_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-debug", argc, argv)) > 0) debug_mode = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-binary", argc, argv)) > 0) binary = atoi(argv[i + 1]);
-  if ((i = ArgPos((char *)"-dbow", argc, argv)) > 0) cbow = atoi(argv[i + 1]);
+  if ((i = ArgPos((char *)"-dbow", argc, argv)) > 0) dbow = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-alpha", argc, argv)) > 0) alpha = atof(argv[i + 1]);
   if ((i = ArgPos((char *)"-output", argc, argv)) > 0) strcpy(output_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-window", argc, argv)) > 0) window = atoi(argv[i + 1]);
