@@ -1,0 +1,1 @@
+/usr/bin/cc  -fPIC    -shared -Wl,-soname,libfann.so.2 -o libfann.so.2.2.0 CMakeFiles/fann.dir/floatfann.c.o 

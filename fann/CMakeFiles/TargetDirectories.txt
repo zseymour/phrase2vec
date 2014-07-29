@@ -1,0 +1,4 @@
+/home/zach/phrase2vec/fann/src/CMakeFiles/doublefann.dir
+/home/zach/phrase2vec/fann/src/CMakeFiles/fann.dir
+/home/zach/phrase2vec/fann/src/CMakeFiles/fixedfann.dir
+/home/zach/phrase2vec/fann/src/CMakeFiles/floatfann.dir
