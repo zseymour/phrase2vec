@@ -24,14 +24,14 @@
 
 
 #define MAX_STRING 100
-#define EXP_TABLE_SIZE 2000
-#define MAX_EXP 10
+#define EXP_TABLE_SIZE 1000
+#define MAX_EXP 6
 #define MAX_SENTENCE_LENGTH 2000
 #define MAX_CODE_LENGTH 40
 
 const int vocab_hash_size = 30000000;  // Maximum 30 * 0.7 = 21M words in the vocabulary
 
-typedef double real;                    // Precision of float numbers
+typedef float real;                    // Precision of float numbers
 
 struct vocab_word {
   long long cn;
