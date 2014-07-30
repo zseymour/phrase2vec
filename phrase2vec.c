@@ -848,16 +848,16 @@ void TrainModel() {
       else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", syn0[a * layer1_size + b]);
       fprintf(fo, "\n");
     }
-    for (a = 0; a < phrase_size; a++) {
-      long count = phrases[a].word_count;
+    /* for (a = 0; a < phrase_size; a++) { */
+    /*   long count = phrases[a].word_count; */
       
-      for (b = 0; b < count; b++) {
-	fprintf(fo, "%s ", phrases[a].words[b]);
-      }
-      if (binary) for (b = 0; b < layer1_size; b++) fwrite(&phrases[a].vector[b], sizeof(real), 1, fo);
-      else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].vector[b]);
-      fprintf(fo, "\n");
-    }
+    /*   for (b = 0; b < count; b++) { */
+    /* 	fprintf(fo, "%s ", phrases[a].words[b]); */
+    /*   } */
+    /*   if (binary) for (b = 0; b < layer1_size; b++) fwrite(&phrases[a].vector[b], sizeof(real), 1, fo); */
+    /*   else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].vector[b]); */
+    /*   fprintf(fo, "\n"); */
+    /* } */
     fclose(fo);
   } 
   
