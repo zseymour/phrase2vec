@@ -326,7 +326,8 @@ void LearnVocabFromTrainFile() {
       a = AddWordToVocab(word);
       vocab[a].cn = 1;
     } else vocab[i].cn++;
-    if(i == eol_index) curr_sen = AddSentenceToPhrases("none");
+    if(i == eol_index || (train_words % MAX_SENTENCE_LENGTH == 0)) 
+      curr_sen = AddSentenceToPhrases("none");
     else AddWordToSentence(curr_sen, word);
     if (vocab_size > vocab_hash_size * 0.7) ReduceVocab();
   }
@@ -334,6 +335,7 @@ void LearnVocabFromTrainFile() {
   if (debug_mode > 0) {
     printf("Vocab size: %lld\n", vocab_size);
     printf("Words in train file: %lld\n", train_words);
+    printf("Number of sentences: %lld\n", phrase_size);
   }
   file_size = ftell(fin);
   fclose(fin);
@@ -369,14 +371,15 @@ void LearnVocabFromTestFile() {
     /*   a = AddWordToVocab(word); */
     /*   vocab[a].cn = 1; */
     /* } else vocab[i].cn++; */
-    if(i == eol_index) curr_sen = AddSentenceToPhrases("none");
-    else AddWordToSentence(curr_sen, word);
+    if(i == eol_index || (train_words % MAX_SENTENCE_LENGTH == 0)) curr_sen = AddSentenceToPhrases("none");
+    if (i != eol_index) AddWordToSentence(curr_sen, word);
     //if (vocab_size > vocab_hash_size * 0.7) ReduceVocab();
   }
   //SortVocab();
   if (debug_mode > 0) {
     printf("Vocab size: %lld\n", vocab_size);
     printf("Words in train file: %lld\n", train_words);
+    printf("Number of sentences: %lld\n", phrase_size);
   }
   file_size = ftell(fin);
   fclose(fin);
@@ -841,7 +844,7 @@ void TrainModel() {
   if (output_file[0] != 0) {
     // Save the word vectors
     fo = fopen(output_file, "wb");
-    fprintf(fo, "%lld %lld %lld\n", vocab_size, phrase_size, layer1_size);
+    fprintf(fo, "%lld %lld\n", vocab_size, layer1_size);
     for (a = 0; a < vocab_size; a++) {
       fprintf(fo, "%s ", vocab[a].word);
       if (binary) for (b = 0; b < layer1_size; b++) fwrite(&syn0[a * layer1_size + b], sizeof(real), 1, fo);
