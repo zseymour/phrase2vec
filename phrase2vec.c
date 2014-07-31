@@ -42,7 +42,7 @@ struct vocab_word {
 struct paragraph {
   long long word_count;
   real *vector;
-  char *label;
+  int label_index;
   char **words;
 };
 
@@ -51,9 +51,10 @@ char train_file[MAX_STRING], train_dir[MAX_STRING], test_file[MAX_STRING], test_
 char para_file[MAX_STRING], para_file_test[MAX_STRING];
 struct vocab_word *vocab;
 struct paragraph *phrases;
+char **labels;
 int binary = 0, dbow = 0, debug_mode = 2, window = 5, min_count = 5, num_threads = 1, min_reduce = 1;
 int *vocab_hash;
-long long vocab_max_size = 10000, vocab_size = 0, phrase_max_size = 100000, phrase_size = 0, layer1_size = 100, labeled_instances = 0;
+long long vocab_max_size = 10000, vocab_size = 0, phrase_max_size = 100000, phrase_size = 0, layer1_size = 100, label_max_size = 10, label_size = 0, labeled_instances = 0;
 long long train_words = 0, word_count_actual = 0, file_size = 0, classes = 0;
 real alpha = 0.025, initial_alpha, starting_alpha, sample = 0;
 real *syn0, *syn1, *syn1neg, *expTable;
@@ -123,6 +124,30 @@ int SearchVocab(char *word) {
   return -1;
 }
 
+int SearchLabels(const char *label) {
+  long long i;
+  for (i = 0; i < label_size; i++) {
+    if(strcmp(label, labels[i]) == 0) return i;
+  }
+  return -1;
+}
+
+int AddLabel(const char *label) {
+  if(strcmp(label, "unsup") == 0) return -1;
+  int index = SearchLabels(label);
+  if(index != -1) return index;
+  
+  unsigned int length = strlen(label) + 1;
+  labels[label_size] = (char *)calloc(length, sizeof(char));
+  strcpy(labels[label_size], label);
+  label_size++;
+  if(label_size + 2 >= label_max_size) {
+    label_max_size += 10;
+    labels = (char **)realloc(labels, label_max_size * sizeof(char *));
+  }
+  return label_size - 1;
+}
+
 // Reads a word and returns its index in the vocabulary
 int ReadWordIndex(FILE *fin) {
   char word[MAX_STRING];
@@ -163,9 +188,8 @@ int AddWordToSentence(int index, char *word) {
 }
 
 int AddSentenceToPhrases(const char *label) {
-  unsigned int length = strlen(label) + 1;
-  phrases[phrase_size].label = (char *)calloc(length, sizeof(char));
-  strcpy(phrases[phrase_size].label, label);
+  int index = AddLabel(label);
+  phrases[phrase_size].label_index = index;
   phrases[phrase_size].word_count = 0;
   phrases[phrase_size].words = (char **)calloc(MAX_SENTENCE_LENGTH, sizeof(char *));
   phrase_size++;
@@ -463,6 +487,7 @@ void LearnVocabFromTrainDir() {
     printf("Vocab size: %lld\n", vocab_size);
     printf("Words in train file: %lld\n", train_words);
     printf("Number of sentences: %lld\n", phrase_size);
+    printf("Number of labels: %lld\n", label_size);
   }
   //file_size = ftell(fin);
 }
@@ -827,17 +852,16 @@ void TrainModel() {
   printf("\nCompleted training. Now outputting vectors.\n");
   fo = fopen(para_file, "wb");
   fo = fopen(para_file, "wb");
-  fprintf(fo, "%lld %lld %d\n", labeled_instances, layer1_size, 1);
+  fprintf(fo, "%lld %lld %lld\n", labeled_instances, layer1_size, label_size);
   for (a = 0; a < phrase_size; a++) {
-    if(strcmp(phrases[a].label, "unsup") == 0) continue;
+    int arr[label_size];
+    memset(arr, 0, sizeof(arr));
+    if(phrases[a].label_index == -1) continue;
     for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].vector[b]);
     fprintf(fo, "\n");
-    if(strcmp(phrases[a].label, "neg") == 0)
-      fprintf(fo, "0\n");
-    else if(strcmp(phrases[a].label, "pos") == 0)
-      fprintf(fo, "1\n");
-    else
-      fprintf(fo, "-1\n");
+    arr[phrases[a].label_index] = 1;
+    for (b = 0; b < label_size; b++) fprintf(fo, "%d ", arr[b]);
+    fprintf(fo, "\n");
   }
 
   fclose(fo);
@@ -895,17 +919,15 @@ void TrainModel() {
   for (a = 0; a < num_threads; a++) pthread_join(pt[a], NULL);
   printf("\nCompleted training. Now outputting vectors.\n");
   fo = fopen(para_file_test, "wb");
-  fprintf(fo, "%lld %lld %d\n", labeled_instances, layer1_size, 1);
+  fprintf(fo, "%lld %lld %lld\n", labeled_instances, layer1_size, label_size);
   for (a = 0; a < phrase_size; a++) {
-    if(strcmp(phrases[a].label, "unsup") == 0) continue;
+    int arr[label_size];
+    memset(arr, 0, sizeof(arr));
+    if(phrases[a].label_index == -1) continue;
     for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].vector[b]);
     fprintf(fo, "\n");
-    if(strcmp(phrases[a].label, "neg") == 0)
-      fprintf(fo, "0\n");
-    else if(strcmp(phrases[a].label, "pos") == 0)
-      fprintf(fo, "1\n");
-    else
-      fprintf(fo, "-1\n");
+    arr[phrases[a].label_index] = 1;
+    for (b = 0; b < label_size; b++) fprintf(fo, "%d ", arr[b]);
   }
   fclose(fo);
 }
@@ -1009,6 +1031,7 @@ int main(int argc, char **argv) {
   phrases = (struct paragraph *)calloc(phrase_max_size, sizeof(struct paragraph));
   vocab = (struct vocab_word *)calloc(vocab_max_size, sizeof(struct vocab_word));
   vocab_hash = (int *)calloc(vocab_hash_size, sizeof(int));
+  labels = (char **)calloc(label_max_size, sizeof(char *));
   expTable = (real *)malloc((EXP_TABLE_SIZE + 1) * sizeof(real));
   for (i = 0; i < EXP_TABLE_SIZE; i++) {
     expTable[i] = exp((i / (real)EXP_TABLE_SIZE * 2 - 1) * MAX_EXP); // Precompute the exp() table
