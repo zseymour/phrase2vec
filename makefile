@@ -7,7 +7,7 @@ all: phrase2vec paragraph_nn distance word-analogy compute-accuracy word2vec
 phrase2vec : phrase2vec.c
 	$(CC) phrase2vec.c -o phrase2vec $(CFLAGS)
 paragraph_nn : paragraph_nn.c
-	$(CC) -O3 $< -o $@ -lfann -lm
+	$(CC) $< -o $@ -lfann -lm -Ofast
 distance : distance.c
 	$(CC) distance.c -o distance $(CFLAGS)
 word-analogy : word-analogy.c
