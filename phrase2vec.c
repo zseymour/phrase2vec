@@ -41,7 +41,8 @@ struct vocab_word {
 
 struct paragraph {
   long long word_count;
-  real *vector;
+  real *dbow_vector;
+  real *dm_vector;
   int label_index;
   char **words;
 };
@@ -52,7 +53,7 @@ char para_file[MAX_STRING], para_file_test[MAX_STRING];
 struct vocab_word *vocab;
 struct paragraph *phrases;
 char **labels;
-int binary = 0, dbow = 0, debug_mode = 2, window = 5, min_count = 5, num_threads = 1, min_reduce = 1;
+int binary = 0, model = 2, debug_mode = 2, window = 5, min_count = 5, num_threads = 1, min_reduce = 1;
 int *vocab_hash;
 long long vocab_max_size = 10000, vocab_size = 0, phrase_max_size = 100000, phrase_size = 0, layer1_size = 100, label_max_size = 10, label_size = 0, labeled_instances = 0;
 long long train_words = 0, word_count_actual = 0, file_size = 0, classes = 0;
@@ -633,10 +634,15 @@ void InitNet() {
   for (b = 0; b < layer1_size; b++) for (a = 0; a < vocab_size; a++)
    syn0[a * layer1_size + b] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
   for (b = 0; b < phrase_size; b++) {
-    a = posix_memalign((void **)&phrases[b].vector, 128, (long long)layer1_size * sizeof(real));
-    if(phrases[b].vector == NULL) {printf("Memory allocation failed\n"); exit(1);}
+    a = posix_memalign((void **)&phrases[b].dm_vector, 128, (long long)layer1_size * sizeof(real));
+    if(phrases[b].dm_vector == NULL) {printf("Memory allocation failed\n"); exit(1);}
     for(c = 0; c < layer1_size; c++) {
-      phrases[b].vector[c] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
+      phrases[b].dm_vector[c] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
+    }
+    a = posix_memalign((void **)&phrases[b].dbow_vector, 128, (long long)layer1_size * sizeof(real));
+    if(phrases[b].dbow_vector == NULL) {printf("Memory allocation failed\n"); exit(1);}
+    for(c = 0; c < layer1_size; c++) {
+      phrases[b].dbow_vector[c] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
     }
   }
   CreateBinaryTree();
@@ -699,7 +705,7 @@ void *TrainModelThread(void *id) {
       for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
       next_random = next_random * (unsigned long long)25214903917 + 11;
       b = next_random % window;
-      if (!dbow) {  //train pv-dm
+      if (model == 0 || model == 2) {  //train pv-dm
 	// in -> hidden
 	for (a = b; a < window * 2 + 1 - b; a++) {
 	  if (a != window) {
@@ -711,7 +717,7 @@ void *TrainModelThread(void *id) {
 	    for (c = 0; c < layer1_size; c++) neu1[c] += syn0[c + last_word * layer1_size];
 	  }
 	}
-	for (c = 0; c < layer1_size; c++) neu1[c] += phrases[i].vector[c];
+	for (c = 0; c < layer1_size; c++) neu1[c] += phrases[i].dm_vector[c];
 	if (hs) for (d = 0; d < vocab[word].codelen; d++) {
 	    f = 0;
 	    l2 = vocab[word].point[d] * layer1_size;
@@ -765,8 +771,12 @@ void *TrainModelThread(void *id) {
 	      for (c = 0; c < layer1_size; c++) syn0[c + last_word * layer1_size] += neu1e[c];
 	    }
 	}
-	for (c = 0; c < layer1_size; c++) phrases[i].vector[c] += neu1e[c];
-      } else {  //train pv-dbow
+	for (c = 0; c < layer1_size; c++) phrases[i].dm_vector[c] += neu1e[c];
+	
+      } 
+      for (c = 0; c < layer1_size; c++) neu1[c] = 0;
+      for (c = 0; c < layer1_size; c++) neu1e[c] = 0;
+      if (model == 1 || model == 2) {  //train pv-dbow
 	for (a = b; a < window * 2 + 1 - b; a++) if (a != window) {
 	    c = sentence_position - window + a;
 	    if (c < 0) continue;
@@ -780,7 +790,7 @@ void *TrainModelThread(void *id) {
 		f = 0;
 		l2 = vocab[word].point[d] * layer1_size;
 		// Propagate hidden -> output
-		for (c = 0; c < layer1_size; c++) f += syn0[c + l1] * syn1[c + l2];
+		for (c = 0; c < layer1_size; c++) f += phrases[i].dbow_vector[c] * syn1[c + l2];
 		if (f <= -MAX_EXP) continue;
 		else if (f >= MAX_EXP) continue;
 		else f = expTable[(int)((f + MAX_EXP) * (EXP_TABLE_SIZE / MAX_EXP / 2))];
@@ -813,7 +823,8 @@ void *TrainModelThread(void *id) {
 		for (c = 0; c < layer1_size; c++) syn1neg[c + l2] += g * syn0[c + l1];
 	      }
 	    // Learn weights input -> hidden
-	    for (c = 0; c < layer1_size; c++) syn0[c + l1] += neu1e[c];
+	    //for (c = 0; c < layer1_size; c++) syn0[c + l1] += neu1e[c];
+	    for(c = 0; c < layer1_size; c++) phrases[i].dbow_vector[c] += neu1e[c];
 	  }
       }
     }
@@ -857,7 +868,12 @@ void TrainModel() {
     int arr[label_size];
     memset(arr, 0, sizeof(arr));
     if(phrases[a].label_index == -1) continue;
-    for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].vector[b]);
+    if(model == 0)
+      for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].dm_vector[b]);
+    else if (model == 1)
+      for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].dbow_vector[b]);
+    else
+      for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].dm_vector[b] + phrases[a].dbow_vector[b]);
     fprintf(fo, "\n");
     arr[phrases[a].label_index] = 1;
     for (b = 0; b < label_size; b++) fprintf(fo, "%d ", arr[b]);
@@ -890,18 +906,25 @@ void TrainModel() {
   
   if(para_file_test[0] == 0) return;
   printf("Now learning vectors for test paragraphs.\n");
+  //Reset to starting conditions
   pt = (pthread_t *)malloc(num_threads * sizeof(pthread_t));
   phrases = (struct paragraph *)calloc(phrase_max_size, sizeof(struct paragraph));
   for (b = 0; b < phrase_size; b++) {
-    a = posix_memalign((void **)&phrases[b].vector, 128, (long long)layer1_size * sizeof(real));
-    if(phrases[b].vector == NULL) {printf("Memory allocation failed\n"); exit(1);}
+    a = posix_memalign((void **)&phrases[b].dm_vector, 128, (long long)layer1_size * sizeof(real));
+    if(phrases[b].dm_vector == NULL) {printf("Memory allocation failed\n"); exit(1);}
     for(c = 0; c < layer1_size; c++) {
-      phrases[b].vector[c] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
+      phrases[b].dm_vector[c] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
+    }
+    a = posix_memalign((void **)&phrases[b].dbow_vector, 128, (long long)layer1_size * sizeof(real));
+    if(phrases[b].dbow_vector == NULL) {printf("Memory allocation failed\n"); exit(1);}
+    for(c = 0; c < layer1_size; c++) {
+      phrases[b].dbow_vector[c] = (rand() / (real)RAND_MAX - 0.5) / layer1_size;
     }
   }
   phrase_size = 0;
   train_words = 0;
   labeled_instances = 0;
+  //freeze_words to true so that we don't change any word vectors
   freeze_words = 1;
   alpha = initial_alpha;
   starting_alpha = initial_alpha;
@@ -924,7 +947,13 @@ void TrainModel() {
     int arr[label_size];
     memset(arr, 0, sizeof(arr));
     if(phrases[a].label_index == -1) continue;
-    for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].vector[b]);
+
+    if(model == 0)
+      for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].dm_vector[b]);
+    else if (model == 1)
+      for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].dbow_vector[b]);
+    else
+      for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].dm_vector[b] + phrases[a].dbow_vector[b]);
     fprintf(fo, "\n");
     arr[phrases[a].label_index] = 1;
     for (b = 0; b < label_size; b++) fprintf(fo, "%d ", arr[b]);
@@ -991,8 +1020,8 @@ int main(int argc, char **argv) {
     //printf("\t\tThe vocabulary will be saved to <file>\n");
     //printf("\t-read-vocab <file>\n");
     //printf("\t\tThe vocabulary will be read from <file>, not constructed from the training data\n");
-    printf("\t-dbow <int>\n");
-    printf("\t\tUse the distributed bag of words model; default is 0 (PV-DM model)\n");
+    printf("\t-model <int>\n");
+    printf("\t\t0 = PV-DM, 1 = PV-DBOW, 2 = Both (concatenate); default is 2\n");
     printf("\nExamples:\n");
     printf("./phrase2vec -train-dir dir -nn-train train.data -test-dir dir -nn-test test.data -debug 2 -size 200 -window 5 -sample 1e-4 -negative 5 -hs 0 -binary 0 -dbow 1\n\n");
     return 0;
@@ -1017,7 +1046,7 @@ int main(int argc, char **argv) {
   //if ((i = ArgPos((char *)"-read-vocab", argc, argv)) > 0) strcpy(read_vocab_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-debug", argc, argv)) > 0) debug_mode = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-binary", argc, argv)) > 0) binary = atoi(argv[i + 1]);
-  if ((i = ArgPos((char *)"-dbow", argc, argv)) > 0) dbow = atoi(argv[i + 1]);
+  if ((i = ArgPos((char *)"-model", argc, argv)) > 0) model = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-alpha", argc, argv)) > 0) alpha = atof(argv[i + 1]);
   if ((i = ArgPos((char *)"-output", argc, argv)) > 0) strcpy(output_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-window", argc, argv)) > 0) window = atoi(argv[i + 1]);
