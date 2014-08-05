@@ -76,6 +76,7 @@ int main(int argc, char *argv[]) {
   
     fann_set_training_algorithm(ann, FANN_TRAIN_RPROP);
     fann_set_learning_momentum(ann, 0.4f);
+    fann_set_activation_function_output(ann, FANN_LINEAR);
     fann_shuffle_train_data(train_data);
     fann_train_on_data(ann, train_data, max_epochs, 10, desired_error);
   } else
