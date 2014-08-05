@@ -47,7 +47,7 @@ struct paragraph {
   char **words;
 };
 
-char train_file[MAX_STRING], train_dir[MAX_STRING], test_file[MAX_STRING], test_dir[MAX_STRING], output_file[MAX_STRING];
+char train_file[MAX_STRING], train_dir[MAX_STRING], test_file[MAX_STRING], test_dir[MAX_STRING], word_output_file[MAX_STRING], phrase_output_file[MAX_STRING];
 //char save_vocab_file[MAX_STRING], read_vocab_file[MAX_STRING];
 char para_file[MAX_STRING], para_file_test[MAX_STRING];
 struct vocab_word *vocab;
@@ -881,9 +881,9 @@ void TrainModel() {
   }
 
   fclose(fo);
-  if (output_file[0] != 0) {
+  if (word_output_file[0] != 0) {
     // Save the word vectors
-    fo = fopen(output_file, "wb");
+    fo = fopen(word_output_file, "wb");
     fprintf(fo, "%lld %lld\n", vocab_size, layer1_size);
     for (a = 0; a < vocab_size; a++) {
       fprintf(fo, "%s ", vocab[a].word);
@@ -903,6 +903,31 @@ void TrainModel() {
     /* } */
     fclose(fo);
   } 
+
+  if (phrase_output_file[0] != 0) {
+    // Save the paragraph vectors
+    fo = fopen(phrase_output_file, "wb");
+    fprintf(fo, "%lld %lld\n", phrase_size, layer1_size);
+    for (a = 0; a < phrase_size; a++) {
+      long count = phrases[a].word_count;
+      int arr[label_size];
+      memset(arr, 0, sizeof(arr));
+      for (b = 0; b < count; b++) {
+    	fprintf(fo, "%s ", phrases[a].words[b]);
+      }
+      fprintf(fo, "\n");
+      if (binary) for (b = 0; b < layer1_size; b++) fwrite(&phrases[a].dm_vector[b], sizeof(real), 1, fo);
+      else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].dm_vector[b]);
+      
+      fprintf(fo, "\n");
+      if(phrases[a].label_index != -1)
+	arr[phrases[a].label_index] = 1;
+      for (b = 0; b < label_size; b++) fprintf(fo, "%d ", arr[b]);
+      fprintf(fo, "\n");
+    }
+
+    fclose(fo);
+  }
   
   if(para_file_test[0] == 0) return;
   printf("Now learning vectors for test paragraphs.\n");
@@ -987,12 +1012,14 @@ int main(int argc, char **argv) {
     printf("\t\tUse text data from <file> to learn test vectors\n");
     printf("\t-test-dir <file>\n");
     printf("\t\tUse text data from <dir> to learn test vectors\n");
-    printf("\t-output <file>\n");
-    printf("\t\tUse <file> to save the resulting vectors");
+    printf("\t-output-words <file>\n");
+    printf("\t\tUse <file> to save the resulting word vectors\n");
+    printf("\t-output-phrases <file>\n");
+    printf("\t\tUse <file> to save the resulting paragraph vectors (Only for PV-DM model\n)");
     printf("\t-nn-train <file>\n");
-    printf("\t\tUse <file> to save paragraph vectors in FANN format");
+    printf("\t\tUse <file> to save paragraph vectors in FANN format\n");
     printf("\t-nn-test <file>\n");
-    printf("\t\tUse <file> to save paragraph vectors in FANN format");
+    printf("\t\tUse <file> to save paragraph vectors in FANN format\n");
     printf("\t-size <int>\n");
     printf("\t\tSet size of word vectors; default is 100\n");
     printf("\t-window <int>\n");
@@ -1026,7 +1053,8 @@ int main(int argc, char **argv) {
     printf("./phrase2vec -train-dir dir -nn-train train.data -test-dir dir -nn-test test.data -debug 2 -size 200 -window 5 -sample 1e-4 -negative 5 -hs 0 -binary 0 -dbow 1\n\n");
     return 0;
   }
-  output_file[0] = 0;
+  word_output_file[0] = 0;
+  phrase_output_file[0] = 0;
   //save_vocab_file[0] = 0;
   //read_vocab_file[0] = 0;
   train_file[0] = 0;
@@ -1048,7 +1076,8 @@ int main(int argc, char **argv) {
   if ((i = ArgPos((char *)"-binary", argc, argv)) > 0) binary = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-model", argc, argv)) > 0) model = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-alpha", argc, argv)) > 0) alpha = atof(argv[i + 1]);
-  if ((i = ArgPos((char *)"-output", argc, argv)) > 0) strcpy(output_file, argv[i + 1]);
+  if ((i = ArgPos((char *)"-output-words", argc, argv)) > 0) strcpy(word_output_file, argv[i + 1]);
+  if ((i = ArgPos((char *)"-output-phrases", argc, argv)) > 0) strcpy(phrase_output_file, argv[i + 1]);
   if ((i = ArgPos((char *)"-window", argc, argv)) > 0) window = atoi(argv[i + 1]);
   if ((i = ArgPos((char *)"-sample", argc, argv)) > 0) sample = atof(argv[i + 1]);
   if ((i = ArgPos((char *)"-hs", argc, argv)) > 0) hs = atoi(argv[i + 1]);
