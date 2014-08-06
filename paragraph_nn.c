@@ -99,7 +99,7 @@ int main(int argc, char *argv[]) {
     
     
     printf("MSE error on test data: %f\n", fann_get_MSE(ann));
-    printf("Error rate on test data: %f%%\n", (((float) num_test_data - errors)/num_test_data) * 100);
+    printf("Error rate on test data: %f%%\n", (((float) errors)/num_test_data) * 100);
   }
   
   if(output_file[0] != 0) {
