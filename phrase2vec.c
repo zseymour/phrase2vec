@@ -44,6 +44,7 @@ struct paragraph {
   real *dbow_vector;
   real *dm_vector;
   int label_index;
+  char *file_name;
   char **words;
 };
 
@@ -60,7 +61,7 @@ long long train_words = 0, word_count_actual = 0, file_size = 0, classes = 0;
 real alpha = 0.025, initial_alpha, starting_alpha, sample = 0;
 real *syn0, *syn1, *syn1neg, *expTable;
 clock_t start;
-
+const char* model_names[] = {"PV-DM", "PV-DBOW", "PV-DM + PV-DBOW"};
 int hs = 1, negative = 0, freeze_words = 0;
 const int table_size = 1e8;
 int *table;
@@ -188,9 +189,14 @@ int AddWordToSentence(int index, char *word) {
   return phrases[index].word_count - 1;
 }
 
-int AddSentenceToPhrases(const char *label) {
+int AddSentenceToPhrases(const char *file_name, const char *label) {
   int index = AddLabel(label);
   phrases[phrase_size].label_index = index;
+
+  unsigned int length = strlen(file_name) + 1;
+  if(length > PATH_MAX) length = PATH_MAX;
+  phrases[phrase_size].file_name = (char *)calloc(length, sizeof(char));
+  strcpy(phrases[phrase_size].file_name, file_name);
   phrases[phrase_size].word_count = 0;
   phrases[phrase_size].words = (char **)calloc(MAX_SENTENCE_LENGTH, sizeof(char *));
   phrase_size++;
@@ -337,7 +343,7 @@ void LearnVocabFromTrainFile() {
   }
   vocab_size = 0;
   long long eol_index = AddWordToVocab((char *)"</s>");
-  long long curr_sen = AddSentenceToPhrases("none");
+  long long curr_sen = AddSentenceToPhrases("none","none");
   while (1) {
     ReadWord(word, fin);
     if (feof(fin)) break;
@@ -352,7 +358,7 @@ void LearnVocabFromTrainFile() {
       vocab[a].cn = 1;
     } else vocab[i].cn++;
     if(i == eol_index || (train_words % MAX_SENTENCE_LENGTH == 0)) 
-      curr_sen = AddSentenceToPhrases("none");
+      curr_sen = AddSentenceToPhrases(train_file, "none");
     else AddWordToSentence(curr_sen, word);
     if (vocab_size > vocab_hash_size * 0.7) ReduceVocab();
   }
@@ -382,7 +388,7 @@ void LearnVocabFromTestFile() {
     printf("ERROR: must initialize vocab before training test vectors.\n");
     exit(1);
   }
-  long long curr_sen = AddSentenceToPhrases("none");
+  long long curr_sen = AddSentenceToPhrases("none","none");
   while (1) {
     ReadWord(word, fin);
     if (feof(fin)) break;
@@ -396,7 +402,8 @@ void LearnVocabFromTestFile() {
     /*   a = AddWordToVocab(word); */
     /*   vocab[a].cn = 1; */
     /* } else vocab[i].cn++; */
-    if(i == eol_index || (train_words % MAX_SENTENCE_LENGTH == 0)) curr_sen = AddSentenceToPhrases("none");
+    if(i == eol_index || (train_words % MAX_SENTENCE_LENGTH == 0)) 
+      curr_sen = AddSentenceToPhrases(test_file, "none");
     if (i != eol_index) AddWordToSentence(curr_sen, word);
     //if (vocab_size > vocab_hash_size * 0.7) ReduceVocab();
   }
@@ -458,7 +465,7 @@ void LearnVocabFromTrainDir() {
 	  fin = fopen(file,"rb");
 	  if(fin == NULL)
 	    continue;
-	  int sentence_index = AddSentenceToPhrases(label_name);
+	  int sentence_index = AddSentenceToPhrases(file, label_name);
 	  //printf("INFO: Reading sentence #%d from %s.\n", sentence_index, file);
 	  while (1) {
 	    ReadWord(word, fin);
@@ -541,7 +548,7 @@ void LearnVocabFromTestDir() {
 	  fin = fopen(file,"rb");
 	  if(fin == NULL)
 	    continue;
-	  int sentence_index = AddSentenceToPhrases(label_name);
+	  int sentence_index = AddSentenceToPhrases(file, label_name);
 	  //printf("INFO: Reading sentence #%d from %s.\n", sentence_index, file);
 	  while (1) {
 	    ReadWord(word, fin);
@@ -846,6 +853,11 @@ void TrainModel() {
   pthread_t *pt = (pthread_t *)malloc(num_threads * sizeof(pthread_t));
   initial_alpha = alpha;
   starting_alpha = alpha;
+  printf("Learning paragraph vectors with parameters:\n");
+  printf("\tModel: %s\n", model_names[model]);
+  printf("\tNumber of features: %lld\n", layer1_size);
+  printf("\tWindow size: %d\n", window);
+  printf("\tSampling rate: %f\n\n", sample);
   if (train_file[0] != 0) {
     printf("Starting training using file %s\n", train_file);
     LearnVocabFromTrainFile();
@@ -909,21 +921,21 @@ void TrainModel() {
     fo = fopen(phrase_output_file, "wb");
     fprintf(fo, "%lld %lld\n", phrase_size, layer1_size);
     for (a = 0; a < phrase_size; a++) {
-      long count = phrases[a].word_count;
-      int arr[label_size];
-      memset(arr, 0, sizeof(arr));
-      for (b = 0; b < count; b++) {
-    	fprintf(fo, "%s ", phrases[a].words[b]);
-      }
-      fprintf(fo, "\n");
+      //long count = phrases[a].word_count;
+      //int arr[label_size];
+      //memset(arr, 0, sizeof(arr));
+      fprintf(fo, "%s ", phrases[a].file_name);
+      //for (b = 0; b < count; b++) {
+      //fprintf(fo, "%s ", phrases[a].words[b]);
+      //}
+      //fprintf(fo, "\n");
       if (binary) for (b = 0; b < layer1_size; b++) fwrite(&phrases[a].dm_vector[b], sizeof(real), 1, fo);
       else for (b = 0; b < layer1_size; b++) fprintf(fo, "%lf ", phrases[a].dm_vector[b]);
-      
       fprintf(fo, "\n");
-      if(phrases[a].label_index != -1)
-	arr[phrases[a].label_index] = 1;
-      for (b = 0; b < label_size; b++) fprintf(fo, "%d ", arr[b]);
-      fprintf(fo, "\n");
+      //if(phrases[a].label_index != -1)
+      //arr[phrases[a].label_index] = 1;
+      //for (b = 0; b < label_size; b++) fprintf(fo, "%d ", arr[b]);
+      //fprintf(fo, "\n");
     }
 
     fclose(fo);
