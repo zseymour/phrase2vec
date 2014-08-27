@@ -14,8 +14,21 @@ int ArgPos(char *str, int argc, char **argv) {
   return -1;
 }
 
+int array_max(fann_type *output, int length) {
+  int i, index=-1;
+  fann_type max=-32000;
+  for(i = 0; i < length; i++) {
+    if(output[i] > max) {
+      index = i;
+      max = output[i];
+    }
+  }
+  
+  return index;
+}
+
 int main(int argc, char *argv[]) {
-  int i;
+  int i, j;
   if (argc == 1) {
     printf("PARAGRAPH VECTOR neural network trainer\n\n");
     printf("Options:\n");
@@ -76,7 +89,8 @@ int main(int argc, char *argv[]) {
   
     fann_set_training_algorithm(ann, FANN_TRAIN_RPROP);
     fann_set_learning_momentum(ann, 0.4f);
-    fann_set_activation_function_output(ann, FANN_LINEAR);
+    fann_set_activation_function_hidden(ann, FANN_SIGMOID);
+    fann_set_activation_function_output(ann, FANN_SIGMOID);
     fann_shuffle_train_data(train_data);
     fann_train_on_data(ann, train_data, max_epochs, 10, desired_error);
   } else
@@ -93,8 +107,12 @@ int main(int argc, char *argv[]) {
       if(*test_data->output[i] == (fann_type)-1) continue;
       fann_test(ann, test_data->input[i], test_data->output[i]);
       output = fann_run(ann, test_data->input[i]);
-      if(memcmp(output,test_data->output[i],sizeof(output)) != 0)
+      int max_index = array_max(output, test_data->num_output);
+      if(test_data->output[i][max_index] != 1) {
+	//for(j = 0; j < test_data->num_output; j++) 
+	//printf("Output[%d]: %f\t\tTest[%d]: %f\n", j, output[j], j, test_data->output[i][j]);
         errors++;
+      }
     }
     
     
