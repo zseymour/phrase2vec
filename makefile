@@ -1,8 +1,9 @@
 CC = gcc
 #The -Ofast might not work with older versions of gcc; in that case, use -O2
 CFLAGS = -lm -pthread -Ofast -march=native -Wall -funroll-loops -Wno-unused-result
+TARGETS = phrase2vec paragraph_nn word_distance phrase_distance word-analogy compute-accuracy word2vec
 
-all: phrase2vec paragraph_nn word_distance phrase_distance word-analogy compute-accuracy word2vec
+all: $(TARGETS)
 
 phrase2vec : phrase2vec.c
 	$(CC) phrase2vec.c -o phrase2vec $(CFLAGS)
@@ -19,4 +20,4 @@ compute-accuracy : compute-accuracy.c
 word2vec : word2vec.c
 	$(CC) word2vec.c -o word2vec $(CFLAGS)
 clean:
-	rm -rf phrase2vec paragraph_nn distance word-analogy compute-accuracy
+	rm -rf $(TARGETS)
