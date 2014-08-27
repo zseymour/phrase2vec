@@ -18,7 +18,7 @@ if [ ! -e aclImdb ]; then
   find . -type f -name "*.bak" -exec rm -f {} \;
   echo "Finished preprocessing"
 fi
-time ./phrase2vec -train-dir aclImdb/train/ -test-dir aclImdb/test/ -output imdb-word-vectors.bin -nn-train imdbtrain.data -nn-test imdbtest.data -size 400 -window 10 -sample 1e-3 -threads 12 -binary 1
+time ./phrase2vec -train-dir aclImdb/train/ -test-dir aclImdb/test/ -output-words imdb-word-vectors.bin -output-phrases imdb-phrase-vectors.bin -nn-train imdbtrain.data -nn-test imdbtest.data -word-size 400 -paragraph-size 400 -window 10 -sample 1e-5 -threads 12 -binary 1 -model 0
 echo "============PHRASE2VEC ACCURACY================"
-./paragraph_nn -train imdbtrain.data -test imdbtest.data -output imdb.net -epochs 1000
+./paragraph_nn -train imdbtrain.data -test imdbtest.data -output imdb.net -epochs 1000 -error 0.01
 
