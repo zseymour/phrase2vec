@@ -20,7 +20,7 @@
 #include <ctype.h>
 
 const long long max_size = 2000;         // max length of strings
-const long long N = 1;                   // number of closest words
+const long long N = 10;                   // number of closest words
 const long long max_w = 50;              // max length of vocabulary entries
 
 int main(int argc, char **argv)
