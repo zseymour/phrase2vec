@@ -1,1 +1,0 @@
-/usr/bin/cc  -fPIC    -shared -Wl,-soname,libfixedfann.so.2 -o libfixedfann.so.2.2.0 CMakeFiles/fixedfann.dir/fixedfann.c.o 
